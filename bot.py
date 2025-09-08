@@ -307,7 +307,7 @@ class ResearchBot:
         current = self._get_user_settings(chat_id)
         
         if not args:
-            depth_status = "🟢 Включён" if current['deep_analysis'] else "🔴 Выключен"
+            depth_status = "включён" if current['deep_analysis'] else "выключен"
             text = (
                 "⚙️ <b>Текущие настройки</b>\n\n"
                 f"📊 <b>Количество источников:</b> {current['max_results']}\n"
@@ -340,15 +340,14 @@ class ResearchBot:
             elif key in ['depth', 'deep', 'analysis', 'deep_analysis']:
                 if value in ['on', 'true', '1', 'yes', 'вкл']:
                     current['deep_analysis'] = True
-                    status = "🟢 включён"
+                    status = "включён"
                 elif value in ['off', 'false', '0', 'no', 'выкл']:
                     current['deep_analysis'] = False
-                    status = "🔴 выключен"
+                    status = "выключен"
                 else:
                     await update.message.reply_text("❌ Используйте <code>on</code> или <code>off</code>\n<b>Пример:</b> <code>/settings depth on</code>", parse_mode='HTML')
                     return
                 save_user_settings(chat_id, current)
-                await update.message.reply_text(f"✅ <b>Глубокий анализ:</b> {status}", parse_mode='HTML')
                 
             elif key in ['lang', 'language']:
                 if value not in ['ru', 'en']:
@@ -366,7 +365,7 @@ class ResearchBot:
         if not context.args:
             await update.message.reply_text(
                 "❌ <b>Укажите тему для исследования</b>\n\n"
-                "📝 <b>Пример:</b> <code>/research Блокчейн технологии в банковской сфере</code>",
+                "📝 <b>Пример:</b> <code>/research искусственный интеллект в медицине</code>",
                 parse_mode='HTML'
             )
             return
@@ -477,7 +476,7 @@ class ResearchBot:
             f"🔬 <b>Запускаю исследование</b>\n\n"
             f"📋 <b>Тема:</b> {topic}\n"
             f"📊 <b>Источников:</b> до {settings['max_results']}\n"
-            f"🔍 <b>Глубокий анализ:</b> {'включён' if settings['deep_analysis'] else 'выключен'}\n\n"
+            f"🔍 <b>Глубокий анализ:</b> {'включен' if settings['deep_analysis'] else 'выключен'}\n\n"
             "⏳ <i>Подготавливаю поисковые запросы...</i>",
             parse_mode='HTML'
         )
@@ -729,7 +728,7 @@ class ResearchBot:
     async def generate_search_queries(self, topic: str, settings: dict) -> List[str]:
         """Генерирует улучшенные поисковые запросы"""
         base_queries = [
-            f"{topic} обзор 2024",
+            f"{topic} обзор 2025",
             f"{topic} исследование анализ",
             f"{topic} статистика данные тренды",
             f"{topic} развитие перспективы",
@@ -752,7 +751,7 @@ class ResearchBot:
         
         # Добавляем специфичные запросы в зависимости от темы
         topic_lower = topic.lower()
-        if any(word in topic_lower for word in ['технология', 'tech', 'ии', 'ai', 'блокчейн']):
+        if any(word in topic_lower for word in ['технология', 'tech', 'ии', 'ai', 'блокчейн', 'искусственный интеллект']):
             base_queries.extend([
                 f"{topic} внедрение применение",
                 f"{topic} стартапы компании лидеры"
@@ -878,9 +877,12 @@ class ResearchBot:
         
         # Устанавливаем шрифт с поддержкой кириллицы
         if PDF_FONT_NAME and PDF_FONT_NAME != 'Helvetica':
-            title_style.fontName = PDF_FONT_NAME
-            heading_style.fontName = PDF_FONT_NAME
-            normal_style.fontName = PDF_FONT_NAME
+            try:
+                title_style.fontName = PDF_FONT_NAME
+                heading_style.fontName = PDF_FONT_NAME
+                normal_style.fontName = PDF_FONT_NAME
+            except Exception as e:
+                logger.warning(f"Не удалось установить шрифт {PDF_FONT_NAME}: {e}")
         
         story = []
         
@@ -904,7 +906,11 @@ class ResearchBot:
                 # Убираем markdown разметку для PDF
                 clean_line = line.replace('**', '').replace('*', '').replace('`', '')
                 if len(clean_line) > 0:
-                    story.append(Paragraph(clean_line, normal_style))
+                    try:
+                        story.append(Paragraph(clean_line, normal_style))
+                    except Exception as e:
+                        # Если не удалось добавить строку, пропускаем её
+                        logger.debug(f"Пропущена строка в PDF: {e}")
         
         doc.build(story)
         buffer.seek(0)
@@ -913,16 +919,31 @@ class ResearchBot:
     # ---------- Run ----------
     def run(self):
         if not self.token:
-            print("❌ Отсутствует TELEGRAM_BOT_TOKEN в переменных окружения")
+            logger.error("❌ Отсутствует TELEGRAM_BOT_TOKEN в переменных окружения")
             exit(1)
         if not self.serper_api_key:
-            print("❌ Отсутствует SERPER_API_KEY в переменных окружения")
+            logger.error("❌ Отсутствует SERPER_API_KEY в переменных окружения")
             exit(1)
         if not self.mistral_api_key:
-            print("❌ Отсутствует MISTRAL_API_KEY в переменных окружения")
+            logger.error("❌ Отсутствует MISTRAL_API_KEY в переменных окружения")
             exit(1)
             
         self.application = Application.builder().token(self.token).build()
+        
+        # Добавляем обработчик ошибок
+        async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+            logger.error("Exception while handling an update:", exc_info=context.error)
+            if update and hasattr(update, 'effective_chat') and update.effective_chat:
+                try:
+                    await context.bot.send_message(
+                        chat_id=update.effective_chat.id,
+                        text="❌ <b>Произошла ошибка</b>\n\nПопробуйте позже или обратитесь к администратору.",
+                        parse_mode='HTML'
+                    )
+                except Exception:
+                    pass
+        
+        self.application.add_error_handler(error_handler)
         
         # Регистрируем обработчики
         self.application.add_handler(CommandHandler("start", self.start))
